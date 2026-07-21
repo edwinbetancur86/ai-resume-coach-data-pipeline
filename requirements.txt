@@ -2,6 +2,7 @@
 openai>=1.40           # OpenAI-compatible client (points at OpenRouter base URL)
 instructor>=1.5        # structure-safe LLM outputs on top of Pydantic
 pydantic>=2.7          # schema validation with rich error objects
+email-validator>=2.1   # backs Pydantic's EmailStr (real RFC email checks)
 python-dotenv>=1.0     # load .env config
 tenacity>=8.3          # retry/backoff around flaky API calls
 

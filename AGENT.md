@@ -71,6 +71,8 @@ If I couldn't explain a piece to an interviewer, we're not done with it.
 | 7 | **Skill normalization is one shared module** (`normalize.py`) used by generator checks AND labeler | Single source of truth; Jaccard would be artificially low without it | Challenge 3 |
 | 8 | `overall`/derived flags are COMPUTED from metrics, never hand-set | Derived truth can't contradict its inputs | Failure labeling |
 | 9 | Two output streams: clean JSONL data vs. verbose raw logs | Deliverable dataset stays clean; audit trail (raw responses) lives in `logs/` | Storage strategy |
+| 10 | **Two-layer schema**: lenient *generation* model (step1) vs. strict *domain* model (`schemas.py`) | If Instructor enforced the strict model, ~100 % of records would be valid → no invalid records for the gate/correction loop to act on. The gap between loose generation and strict validation is what produces the invalid records the deliverable needs | Validation gate + correction loop |
+| 11 | Strict native types in the domain model: `date` (not str), `EmailStr`, enums, `Field` bounds | Makes validation *real* — a non-ISO date, bad email, or out-of-range GPA becomes a caught, categorized error with a precise field path (feeds the correction prompt) | Validation rules |
 
 *(Append a new row every time we make a decision worth remembering.)*
 
