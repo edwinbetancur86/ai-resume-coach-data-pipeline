@@ -1,0 +1,28 @@
+# ── Secrets ───────────────────────────────────────────────────────────────
+.env
+*.key
+
+# ── Python ────────────────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# ── Tooling caches ────────────────────────────────────────────────────────
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ── Runtime noise (audit logs are regenerated each run) ───────────────────
+logs/*.log
+logs/**/*.jsonl
+
+# ── OS cruft ──────────────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+
+# NOTE: data/ and visualizations/ are intentionally NOT ignored — a
+# representative run is part of the portfolio deliverable and is committed.
