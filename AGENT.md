@@ -73,6 +73,10 @@ If I couldn't explain a piece to an interviewer, we're not done with it.
 | 9 | Two output streams: clean JSONL data vs. verbose raw logs | Deliverable dataset stays clean; audit trail (raw responses) lives in `logs/` | Storage strategy |
 | 10 | **Two-layer schema**: lenient *generation* model (step1) vs. strict *domain* model (`schemas.py`) | If Instructor enforced the strict model, ~100 % of records would be valid → no invalid records for the gate/correction loop to act on. The gap between loose generation and strict validation is what produces the invalid records the deliverable needs | Validation gate + correction loop |
 | 11 | Strict native types in the domain model: `date` (not str), `EmailStr`, enums, `Field` bounds | Makes validation *real* — a non-ISO date, bad email, or out-of-range GPA becomes a caught, categorized error with a precise field path (feeds the correction prompt) | Validation rules |
+| 12 | **Two independent retry layers** in `llm_client`: tenacity (transport: timeout/429/conn, backoff) vs. Instructor `max_retries` (schema-validation re-prompt) | Different failure modes at different layers; conflating them retries the wrong thing | Rules #6, #7 |
+| 13 | Lenient gen schema keeps `required_skills` non-empty but drops all domain bounds/enums/dates + omits metadata | Non-empty skills is a *structural* need for downstream Jaccard; dropped bounds are what manufacture invalid records for the gate/correction loop | Decision #10, Validation gate |
+| 14 | Prompt loader uses `string.Template` (`$var`), not `str.format` | Future prompts contain literal JSON `{ }`; `.format` would choke on them | Hard Rule #3 |
+| 15 | `llm_client` is the single LLM doorway; raw completion logged to `logs/raw_responses.jsonl`, keyed by `trace_id` | One place for provider/retry/rate-limit policy; forensic audit trail separate from clean data | Rules #7, #9, decision #9 |
 
 *(Append a new row every time we make a decision worth remembering.)*
 
