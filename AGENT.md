@@ -77,6 +77,9 @@ If I couldn't explain a piece to an interviewer, we're not done with it.
 | 13 | Lenient gen schema keeps `required_skills` non-empty but drops all domain bounds/enums/dates + omits metadata | Non-empty skills is a *structural* need for downstream Jaccard; dropped bounds are what manufacture invalid records for the gate/correction loop | Decision #10, Validation gate |
 | 14 | Prompt loader uses `string.Template` (`$var`), not `str.format` | Future prompts contain literal JSON `{ }`; `.format` would choke on them | Hard Rule #3 |
 | 15 | `llm_client` is the single LLM doorway; raw completion logged to `logs/raw_responses.jsonl`, keyed by `trace_id` | One place for provider/retry/rate-limit policy; forensic audit trail separate from clean data | Rules #7, #9, decision #9 |
+| 16 | Writing-style + fit-level are ORTHOGONAL injected prompt fragments (`prompts/styles/`, `prompts/fit/`), one base `resume.md` | 5 styles × 5 fits = 25 combos from 10 small files, not 25 templates; knobs vary independently | Challenge 1, Hard Rule #3 |
+| 17 | Resume prompt deliberately does NOT constrain date/email/GPA format | Lets the model emit realistic-but-invalid data ("May 2017", 4-digit GPA) → organic invalid records for the gate/corrector, not faked ones | Decision #10, Validation gate |
+| 18 | `fit_level`/`writing_style` stamped as INTENDED labels; actual overlap verified by Jaccard in step4 | Prompt steering is soft (observed: a "partial" resume included all required skills) — trust the measurement, not the instruction | Fit-level verification |
 
 *(Append a new row every time we make a decision worth remembering.)*
 

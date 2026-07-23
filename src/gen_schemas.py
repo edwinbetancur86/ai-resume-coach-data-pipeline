@@ -52,3 +52,53 @@ class GenJobDescription(BaseModel):
     title: str
     company: GenCompanyInfo
     requirements: GenJobRequirements
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Lenient RESUME schemas — this is where most invalid records are born. The
+# strict `schemas.py` puts real rules on the fields below; here they are loose,
+# so the model's realistic-but-non-conforming output (e.g. "Jan 2020", a 4.7
+# GPA, "Grandmaster" proficiency) survives generation and reaches the gate.
+# ─────────────────────────────────────────────────────────────────────────
+class GenContactInfo(BaseModel):
+    name: str
+    email: str                          # strict: EmailStr → "john at gmail" slips through
+    phone: str                          # strict: ≥10 chars → a short phone slips through
+    location: str
+    linkedin: str | None = None
+    portfolio: str | None = None
+
+
+class GenEducation(BaseModel):
+    degree: str
+    institution: str
+    graduation_date: str                # strict: date (ISO) → "March 2020" slips through
+    gpa: float | None = None            # strict: 0.0..4.0 → a 4.7 GPA slips through
+    coursework: list[str] = Field(default_factory=list)
+
+
+class GenExperience(BaseModel):
+    company: str
+    title: str
+    start_date: str                     # strict: date (ISO)
+    end_date: str | None = None         # strict: date, and must be after start_date
+    responsibilities: list[str] = Field(default_factory=list)
+    achievements: list[str] = Field(default_factory=list)
+
+
+class GenSkill(BaseModel):
+    name: str
+    proficiency_level: str              # strict: ProficiencyLevel enum → "Grandmaster" slips through
+    years: float | None = None          # strict: 0..50
+
+
+class GenResume(BaseModel):
+    """Loose resume shape. Skills stay non-empty (structural — a resume with zero
+    skills is useless to the Jaccard/overlap analysis); everything else is loose so
+    domain violations reach the strict gate. Metadata is stamped by our code."""
+
+    contact: GenContactInfo
+    summary: str | None = None
+    education: list[GenEducation] = Field(default_factory=list)
+    experience: list[GenExperience] = Field(default_factory=list)
+    skills: list[GenSkill] = Field(min_length=1)
