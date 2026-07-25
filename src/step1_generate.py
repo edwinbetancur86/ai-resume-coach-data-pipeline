@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -123,64 +124,139 @@ def generate_resume_for_job(
     return record
 
 
-def _write_jsonl(records: list[dict], path) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        for r in records:
-            f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
+def _append_jsonl(path, record: dict) -> None:
+    """Append one record and close — crash-safe: a mid-run failure keeps prior progress."""
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 
-def _demo_strict_gate(record: dict, model_cls, label: str) -> None:
-    """Teaching peek-ahead at step2: run the loose record through the STRICT schema so we
-    can SEE whether the two-layer gap produced a valid or an invalid record this time."""
-    try:
-        model_cls.model_validate(record)
-        print(f"  strict-gate preview [{label}]: VALID ✓")
-    except Exception as exc:  # pydantic.ValidationError, but keep it generic for the demo
-        errs = getattr(exc, "errors", lambda: [])()
-        print(f"  strict-gate preview [{label}]: INVALID ({len(errs)} error(s)) "
-              f"— raw material for step3")
-        for e in errs[:4]:  # show a few field paths so the two-layer gap is concrete
-            loc = ".".join(str(p) for p in e.get("loc", ()))
-            print(f"      - {loc}: {e.get('msg', '')}")
+# ── Balanced assignment ──────────────────────────────────────────────────
+# Fit level and writing style are assigned by cycling through all 25 (fit×style)
+# combos. Over each block of 25 resumes every combo appears exactly once, so each of
+# the 5 fit levels lands ~20 % of pairs (spec floor ≥15 %), every style is used evenly,
+# and fit is DECORRELATED from style (not "excellent is always formal"). No RNG →
+# reproducible runs.
+def _fit_style_for(index: int) -> tuple[str, str]:
+    combo = index % 25
+    fit_level = config.FIT_LEVELS[combo % 5][0]        # (label, low, high) -> label
+    writing_style = config.WRITING_STYLES[combo // 5]
+    return fit_level, writing_style
+
+
+def _is_niche(job_index: int, niche_ratio: float) -> bool:
+    """Deterministic ~niche_ratio split so runs are reproducible (no RNG)."""
+    return (job_index % 10) < round(niche_ratio * 10)
+
+
+def _pct(part: int, whole: int) -> float:
+    return 100.0 * part / whole if whole else 0.0
+
+
+def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
+    """Full generation run: jobs → targeted resumes → pair links, written incrementally.
+
+    Rule #6: a single failed generation is logged and skipped, never crashes the run.
+    Rule #9: outputs are timestamped. The rate-limit delay lives in llm_client.
+    """
+    sys.stdout.reconfigure(encoding="utf-8")  # cp1252 consoles crash on LLM em-dashes/emoji
+    config.ensure_dirs()
+    config.assert_api_key()  # fail fast before any work if the key is missing
+
+    ts = _timestamp()
+    jobs_path = config.GENERATED_DIR / f"jobs_{ts}.jsonl"
+    resumes_path = config.GENERATED_DIR / f"resumes_{ts}.jsonl"
+    pairs_path = config.GENERATED_DIR / f"pairs_{ts}.jsonl"
+
+    target = num_jobs * resumes_per_job
+    print(f"Generating {num_jobs} jobs x {resumes_per_job} resumes = {target} pairs "
+          f"via {config.GENERATOR_MODEL} (temp={config.GENERATOR_TEMPERATURE})")
+    print(f"Output -> data/generated/*_{ts}.jsonl\n")
+
+    fit_counts = {lvl[0]: 0 for lvl in config.FIT_LEVELS}
+    style_counts = {s: 0 for s in config.WRITING_STYLES}
+    n_jobs = n_resumes = n_pairs = n_niche = 0
+    failures: list[dict] = []
+
+    resume_index = 0
+    start = time.monotonic()
+
+    for j in range(num_jobs):
+        is_niche = _is_niche(j, niche_ratio)
+        try:
+            job = generate_one_job(is_niche=is_niche)
+        except Exception as exc:  # transport/schema failure survived retries → skip job
+            failures.append({"kind": "job", "job_index": j, "error": repr(exc)})
+            print(f"[job {j + 1}/{num_jobs}] FAILED: {exc!r}")
+            continue
+
+        _append_jsonl(jobs_path, job)
+        n_jobs += 1
+        n_niche += int(is_niche)
+        job_tid = job["metadata"]["trace_id"]
+        tag = "niche" if is_niche else "standard"
+        print(f"[job {j + 1}/{num_jobs}] {job['title'][:48]} ({tag}) -> {resumes_per_job} resumes")
+
+        for _ in range(resumes_per_job):
+            fit, style = _fit_style_for(resume_index)
+            resume_index += 1
+            try:
+                resume = generate_resume_for_job(job, fit_level=fit, style=style)
+            except Exception as exc:
+                failures.append({"kind": "resume", "job_trace_id": job_tid,
+                                 "fit": fit, "style": style, "error": repr(exc)})
+                continue
+
+            _append_jsonl(resumes_path, resume)
+            n_resumes += 1
+            fit_counts[fit] += 1
+            style_counts[style] += 1
+
+            _append_jsonl(pairs_path, {
+                "pair_id": f"pair-{uuid.uuid4().hex[:12]}",
+                "job_trace_id": job_tid,
+                "resume_trace_id": resume["metadata"]["trace_id"],
+                "fit_level": fit,          # intended label; verified by Jaccard in step4
+                "generated_at": _now_iso(),
+            })
+            n_pairs += 1
+
+    elapsed = time.monotonic() - start
+
+    # ── Summary — lets us check spec floors BEFORE validation ────────────
+    print("\n" + "=" * 60)
+    print(f"DONE in {elapsed:.0f}s  |  {n_jobs} jobs, {n_resumes} resumes, "
+          f"{n_pairs} pairs, {n_niche} niche jobs, {len(failures)} failures")
+
+    print("\nFit-level distribution (spec floor: each >= 15% of pairs):")
+    for lvl in config.FIT_LEVELS:
+        name = lvl[0]
+        pct = _pct(fit_counts[name], n_pairs)
+        print(f"  {name:10s} {fit_counts[name]:4d}  {pct:5.1f}%  [{'ok' if pct >= 15.0 else 'LOW'}]")
+
+    print("\nWriting-style distribution:")
+    for s in config.WRITING_STYLES:
+        print(f"  {s:20s} {style_counts[s]:4d}  {_pct(style_counts[s], n_resumes):5.1f}%")
+
+    if failures:
+        print(f"\n{len(failures)} failure(s) logged (run continued; details in logs/raw_responses.jsonl).")
+
+    print(f"\nWrote -> {jobs_path.relative_to(config.ROOT_DIR)}")
+    print(f"Wrote -> {resumes_path.relative_to(config.ROOT_DIR)}")
+    print(f"Wrote -> {pairs_path.relative_to(config.ROOT_DIR)}")
 
 
 def main() -> None:
-    # Windows consoles default to cp1252 and crash on em-dashes/emoji the LLM emits.
-    sys.stdout.reconfigure(encoding="utf-8")
+    import argparse
 
-    from .schemas import JobDescription, Resume  # local: step1 doesn't depend on the gate
-
-    config.ensure_dirs()
-    ts = _timestamp()
-    print(f"Generating via {config.GENERATOR_MODEL} (temp={config.GENERATOR_TEMPERATURE})...")
-
-    # ── 1 job ────────────────────────────────────────────────────────────
-    job = generate_one_job(is_niche=False)
-    job_path = config.GENERATED_DIR / f"jobs_{ts}.jsonl"
-    _write_jsonl([job], job_path)
-
-    print(f"\nJOB  {job['title']}  @ {job['company']['name']} ({job['company']['industry']})")
-    print(f"  exp: {job['requirements']['experience_years']}y / {job['requirements']['experience_level']}"
-          f"   req_skills: {', '.join(job['requirements']['required_skills'][:6])}")
-    _demo_strict_gate(job, JobDescription, "job")
-
-    # ── 1 resume targeted at that job (Phase 2b proof) ───────────────────
-    fit, style = "partial", "technical_detailed"
-    resume = generate_resume_for_job(job, fit_level=fit, style=style)
-    resume_path = config.GENERATED_DIR / f"resumes_{ts}.jsonl"
-    _write_jsonl([resume], resume_path)
-
-    print(f"\nRESUME  {resume['contact']['name']}  (fit={fit}, style={style})")
-    print(f"  email: {resume['contact']['email']}   phone: {resume['contact']['phone']}")
-    skills_preview = ", ".join(f"{s['name']}={s['proficiency_level']}" for s in resume["skills"][:5])
-    print(f"  skills: {skills_preview}")
-    if resume["education"]:
-        print(f"  grad_date (raw): {resume['education'][0]['graduation_date']}  "
-              f"gpa: {resume['education'][0].get('gpa')}")
-    _demo_strict_gate(resume, Resume, "resume")
-
-    print(f"\nWrote -> {job_path.relative_to(config.ROOT_DIR)}")
-    print(f"Wrote -> {resume_path.relative_to(config.ROOT_DIR)}")
+    p = argparse.ArgumentParser(description="Step 1 — generate jobs, resumes, and pair links.")
+    p.add_argument("--jobs", type=int, default=config.DEFAULT_NUM_JOBS,
+                   help=f"number of jobs (default {config.DEFAULT_NUM_JOBS})")
+    p.add_argument("--resumes-per-job", type=int, default=config.DEFAULT_RESUMES_PER_JOB,
+                   help=f"resumes per job (default {config.DEFAULT_RESUMES_PER_JOB})")
+    p.add_argument("--niche-ratio", type=float, default=config.NICHE_JOB_RATIO,
+                   help=f"fraction of jobs flagged niche (default {config.NICHE_JOB_RATIO})")
+    args = p.parse_args()
+    run(num_jobs=args.jobs, resumes_per_job=args.resumes_per_job, niche_ratio=args.niche_ratio)
 
 
 if __name__ == "__main__":

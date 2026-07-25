@@ -65,6 +65,7 @@ LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN", "")
 # ─────────────────────────────────────────────────────────────────────────
 DEFAULT_NUM_JOBS = 50
 DEFAULT_RESUMES_PER_JOB = 6
+NICHE_JOB_RATIO = 0.30  # ~30% of jobs flagged niche (feeds niche-vs-standard analysis)
 
 # The 5 writing-style templates (Challenge 1 — diversity).
 WRITING_STYLES = [

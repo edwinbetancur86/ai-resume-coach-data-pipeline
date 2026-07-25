@@ -80,6 +80,8 @@ If I couldn't explain a piece to an interviewer, we're not done with it.
 | 16 | Writing-style + fit-level are ORTHOGONAL injected prompt fragments (`prompts/styles/`, `prompts/fit/`), one base `resume.md` | 5 styles × 5 fits = 25 combos from 10 small files, not 25 templates; knobs vary independently | Challenge 1, Hard Rule #3 |
 | 17 | Resume prompt deliberately does NOT constrain date/email/GPA format | Lets the model emit realistic-but-invalid data ("May 2017", 4-digit GPA) → organic invalid records for the gate/corrector, not faked ones | Decision #10, Validation gate |
 | 18 | `fit_level`/`writing_style` stamped as INTENDED labels; actual overlap verified by Jaccard in step4 | Prompt steering is soft (observed: a "partial" resume included all required skills) — trust the measurement, not the instruction | Fit-level verification |
+| 19 | Balanced fit×style assignment by cycling all 25 combos (index % 25) | Each fit ~20% (≥15% floor), every style even, fit DECORRELATED from style; deterministic (no RNG) → reproducible | Success metric #1, Challenge 1 |
+| 20 | Crash-safe incremental append; per-item failure logged + skipped; three streams (jobs/resumes/pairs-linkage), strict ResumePair assembled downstream | A mid-run failure keeps prior progress; can't embed a not-yet-valid resume in the strict pair model | Rules #6, #9 |
 
 *(Append a new row every time we make a decision worth remembering.)*
 
