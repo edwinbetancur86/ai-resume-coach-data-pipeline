@@ -67,6 +67,18 @@ DEFAULT_NUM_JOBS = 50
 DEFAULT_RESUMES_PER_JOB = 6
 NICHE_JOB_RATIO = 0.30  # ~30% of jobs flagged niche (feeds niche-vs-standard analysis)
 
+# Job seniority tiers — cycled across jobs so the job side has a real seniority SPREAD
+# (temp alone collapses to "Senior/5yr"; F3 seniority-mismatch needs signal on both sides).
+# (label, approx-years-hint) — label doubles as experience_level and maps 1:1 onto the
+# SENIORITY_LEVELS ladder below (entry0/mid1/senior2/lead3/director4).
+JOB_SENIORITY_TIERS = [
+    ("Entry", "0-2"),
+    ("Mid", "2-4"),
+    ("Senior", "5-8"),
+    ("Lead", "9-12"),
+    ("Director", "13-18"),
+]
+
 # The 5 writing-style templates (Challenge 1 — diversity).
 WRITING_STYLES = [
     "formal_corporate",

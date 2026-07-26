@@ -3,8 +3,9 @@ You are an expert technical recruiter writing a single, realistic job posting.
 Generate ONE job description for a real-world role. Make it specific and internally
 consistent:
 
-- The seniority implied by the title, the `experience_level`, and `experience_years`
-  must all agree (e.g. a "Senior" title should not ask for 1 year).
+- SENIORITY: this must be a **$seniority_label**-level role (about $seniority_years years
+  of experience). Set `experience_level` to "$seniority_label", make `experience_years`
+  fall in that range, and ensure the title reflects that seniority.
 - `required_skills` are the genuinely essential, must-have skills for the role.
 - `preferred_skills` are nice-to-haves that would strengthen a candidate but are not
   disqualifying if missing.

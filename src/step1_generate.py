@@ -51,16 +51,29 @@ def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 
-def generate_one_job(*, is_niche: bool = False, seed: str | None = None) -> dict:
+def generate_one_job(
+    *,
+    is_niche: bool = False,
+    seniority_label: str = "Senior",
+    seniority_years: str = "5-8",
+    seed: str | None = None,
+) -> dict:
     """Generate one job via the LLM and attach pipeline-owned metadata.
 
-    Returns a plain dict shaped like the strict `JobDescription` (title/company/
-    requirements/metadata) — ready to be written and, later, validated by step2.
+    `seniority_label`/`seniority_years` steer the job toward a target tier so the dataset
+    has a seniority spread (F3 signal). Returns a dict shaped like the strict
+    `JobDescription` (title/company/requirements/metadata) — validated later by step2.
     """
     trace_id = f"job-{uuid.uuid4().hex[:12]}"  # provenance key WE mint (Rule #8, Q2)
     niche_clause = _NICHE_CLAUSE if is_niche else _STANDARD_CLAUSE
 
-    user_prompt = load("job_description", niche_clause=niche_clause, seed=seed or trace_id)
+    user_prompt = load(
+        "job_description",
+        niche_clause=niche_clause,
+        seniority_label=seniority_label,
+        seniority_years=seniority_years,
+        seed=seed or trace_id,
+    )
 
     gen: GenJobDescription = generate_structured(
         GenJobDescription,
@@ -143,9 +156,23 @@ def _fit_style_for(index: int) -> tuple[str, str]:
     return fit_level, writing_style
 
 
-def _is_niche(job_index: int, niche_ratio: float) -> bool:
-    """Deterministic ~niche_ratio split so runs are reproducible (no RNG)."""
-    return (job_index % 10) < round(niche_ratio * 10)
+def _seniority_for(job_index: int) -> tuple[str, str]:
+    """Cycle through the seniority ladder so each tier gets an even share of jobs."""
+    return config.JOB_SENIORITY_TIERS[job_index % len(config.JOB_SENIORITY_TIERS)]
+
+
+def _is_niche(job_index: int, niche_ratio: float, num_jobs: int) -> bool:
+    """Mark the first N seniority-CYCLES as niche, not the first N jobs.
+
+    Keying on the cycle index (job_index // tiers) instead of (job_index % 10) means niche
+    roles are spread evenly across ALL seniority tiers — otherwise niche would only ever
+    land on the first few tiers and confound the niche-vs-standard analysis. Deterministic
+    (no RNG) → reproducible.
+    """
+    tiers = len(config.JOB_SENIORITY_TIERS)
+    num_cycles = max(1, -(-num_jobs // tiers))          # ceil(num_jobs / tiers)
+    niche_cycles = round(niche_ratio * num_cycles)
+    return (job_index // tiers) < niche_cycles
 
 
 def _pct(part: int, whole: int) -> float:
@@ -174,6 +201,7 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
 
     fit_counts = {lvl[0]: 0 for lvl in config.FIT_LEVELS}
     style_counts = {s: 0 for s in config.WRITING_STYLES}
+    seniority_counts = {t[0]: 0 for t in config.JOB_SENIORITY_TIERS}
     n_jobs = n_resumes = n_pairs = n_niche = 0
     failures: list[dict] = []
 
@@ -181,9 +209,11 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
     start = time.monotonic()
 
     for j in range(num_jobs):
-        is_niche = _is_niche(j, niche_ratio)
+        is_niche = _is_niche(j, niche_ratio, num_jobs)
+        sen_label, sen_years = _seniority_for(j)
         try:
-            job = generate_one_job(is_niche=is_niche)
+            job = generate_one_job(is_niche=is_niche, seniority_label=sen_label,
+                                   seniority_years=sen_years)
         except Exception as exc:  # transport/schema failure survived retries → skip job
             failures.append({"kind": "job", "job_index": j, "error": repr(exc)})
             print(f"[job {j + 1}/{num_jobs}] FAILED: {exc!r}")
@@ -192,9 +222,11 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
         _append_jsonl(jobs_path, job)
         n_jobs += 1
         n_niche += int(is_niche)
+        seniority_counts[sen_label] += 1
         job_tid = job["metadata"]["trace_id"]
         tag = "niche" if is_niche else "standard"
-        print(f"[job {j + 1}/{num_jobs}] {job['title'][:48]} ({tag}) -> {resumes_per_job} resumes")
+        print(f"[job {j + 1}/{num_jobs}] [{sen_label}] {job['title'][:44]} ({tag}) "
+              f"-> {resumes_per_job} resumes")
 
         for _ in range(resumes_per_job):
             fit, style = _fit_style_for(resume_index)
@@ -236,6 +268,10 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
     print("\nWriting-style distribution:")
     for s in config.WRITING_STYLES:
         print(f"  {s:20s} {style_counts[s]:4d}  {_pct(style_counts[s], n_resumes):5.1f}%")
+
+    print("\nJob-seniority distribution (intended tier):")
+    for t in config.JOB_SENIORITY_TIERS:
+        print(f"  {t[0]:10s} {seniority_counts[t[0]]:4d}  {_pct(seniority_counts[t[0]], n_jobs):5.1f}%")
 
     if failures:
         print(f"\n{len(failures)} failure(s) logged (run continued; details in logs/raw_responses.jsonl).")

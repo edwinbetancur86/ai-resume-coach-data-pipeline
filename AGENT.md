@@ -82,6 +82,7 @@ If I couldn't explain a piece to an interviewer, we're not done with it.
 | 18 | `fit_level`/`writing_style` stamped as INTENDED labels; actual overlap verified by Jaccard in step4 | Prompt steering is soft (observed: a "partial" resume included all required skills) — trust the measurement, not the instruction | Fit-level verification |
 | 19 | Balanced fit×style assignment by cycling all 25 combos (index % 25) | Each fit ~20% (≥15% floor), every style even, fit DECORRELATED from style; deterministic (no RNG) → reproducible | Success metric #1, Challenge 1 |
 | 20 | Crash-safe incremental append; per-item failure logged + skipped; three streams (jobs/resumes/pairs-linkage), strict ResumePair assembled downstream | A mid-run failure keeps prior progress; can't embed a not-yet-valid resume in the strict pair model | Rules #6, #9 |
+| 21 | Cycle jobs through a 5-tier seniority ladder + re-key niche to per-cycle (data-driven from a 10-job pilot: temp alone gave 100% Senior/5yr) | Gives F3 seniority-mismatch real signal on the job side; decorrelates niche from seniority. Logged in iteration_log | Rule #5, Failure metric F3 |
 
 *(Append a new row every time we make a decision worth remembering.)*
 
