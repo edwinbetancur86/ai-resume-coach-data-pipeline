@@ -179,7 +179,98 @@ def _pct(part: int, whole: int) -> float:
     return 100.0 * part / whole if whole else 0.0
 
 
-def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
+# ── Controlled defect injection ──────────────────────────────────────────
+# Generation is now ~100% valid, which leaves the correction loop nothing to do. So we
+# deliberately corrupt ONE field in a controlled fraction of resumes with a realistic,
+# known-bad value. Each corruption maps to a distinct strict-schema rule so the invalid
+# pool is VARIED and categorized (metric #2), and the ground truth is stamped into
+# metadata so we can score the correction loop against known answers (metric #4).
+# NOTE: this is not "hardcoded content" (Rule #1) — the resume is fully LLM-generated;
+# we only mutate one field's value after the fact.
+def _d_present_end(r: dict):
+    if r.get("experience"):
+        r["experience"][0]["end_date"] = "Present"     # not an ISO date
+        return "experience.0.end_date", "Present"
+    return None
+
+
+def _d_non_iso_date(r: dict):
+    if r.get("experience"):
+        r["experience"][0]["start_date"] = "March 2020"
+        return "experience.0.start_date", "March 2020"
+    if r.get("education"):
+        r["education"][0]["graduation_date"] = "March 2020"
+        return "education.0.graduation_date", "March 2020"
+    return None
+
+
+def _d_gpa_out_of_range(r: dict):
+    if r.get("education"):
+        r["education"][0]["gpa"] = 4.7                  # strict: 0.0..4.0
+        return "education.0.gpa", 4.7
+    return None
+
+
+def _d_invalid_email(r: dict):
+    r["contact"]["email"] = "candidate(at)example.com"  # strict: EmailStr
+    return "contact.email", "candidate(at)example.com"
+
+
+def _d_bad_proficiency(r: dict):
+    if r.get("skills"):
+        r["skills"][0]["proficiency_level"] = "Grandmaster"  # strict: enum
+        return "skills.0.proficiency_level", "Grandmaster"
+    return None
+
+
+def _d_short_phone(r: dict):
+    r["contact"]["phone"] = "555-1234"                  # strict: >=10 chars
+    return "contact.phone", "555-1234"
+
+
+def _d_end_before_start(r: dict):
+    if r.get("experience"):
+        r["experience"][0]["start_date"] = "2020-01-01"
+        r["experience"][0]["end_date"] = "2018-01-01"   # strict: end must be after start
+        return "experience.0.end_date", "2018-01-01 (before start)"
+    return None
+
+
+# Cycled by injection count so all defect types are evenly represented.
+_DEFECT_MENU = [
+    ("present_end_date", _d_present_end),
+    ("non_iso_date", _d_non_iso_date),
+    ("gpa_out_of_range", _d_gpa_out_of_range),
+    ("invalid_email", _d_invalid_email),
+    ("bad_proficiency", _d_bad_proficiency),
+    ("short_phone", _d_short_phone),
+    ("end_before_start", _d_end_before_start),
+]
+
+
+def _should_inject(resume_index: int, rate: float) -> bool:
+    """Even (Bresenham-style) spacing — injects exactly round(N*rate) of N resumes,
+    spread uniformly rather than clustered. Deterministic → reproducible."""
+    return int((resume_index + 1) * rate) > int(resume_index * rate)
+
+
+def _inject_defect(record: dict, start: int) -> str | None:
+    """Apply one defect (cycling from `start`), skipping any that don't fit this record's
+    shape (e.g. no education). Stamps ground truth into metadata. Returns the defect name."""
+    n = len(_DEFECT_MENU)
+    for k in range(n):
+        name, fn = _DEFECT_MENU[(start + k) % n]
+        hit = fn(record)
+        if hit is not None:
+            field, value = hit
+            record["metadata"]["injected_defect"] = {
+                "type": name, "field": field, "corrupted_value": value,
+            }
+            return name
+    return None
+
+
+def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float, inject_rate: float) -> None:
     """Full generation run: jobs → targeted resumes → pair links, written incrementally.
 
     Rule #6: a single failed generation is logged and skipped, never crashes the run.
@@ -202,10 +293,11 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
     fit_counts = {lvl[0]: 0 for lvl in config.FIT_LEVELS}
     style_counts = {s: 0 for s in config.WRITING_STYLES}
     seniority_counts = {t[0]: 0 for t in config.JOB_SENIORITY_TIERS}
+    defect_counts = {name: 0 for name, _ in _DEFECT_MENU}
     n_jobs = n_resumes = n_pairs = n_niche = 0
     failures: list[dict] = []
 
-    resume_index = 0
+    resume_index = injection_count = 0
     start = time.monotonic()
 
     for j in range(num_jobs):
@@ -229,7 +321,8 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
               f"-> {resumes_per_job} resumes")
 
         for _ in range(resumes_per_job):
-            fit, style = _fit_style_for(resume_index)
+            idx = resume_index
+            fit, style = _fit_style_for(idx)
             resume_index += 1
             try:
                 resume = generate_resume_for_job(job, fit_level=fit, style=style)
@@ -237,6 +330,15 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
                 failures.append({"kind": "resume", "job_trace_id": job_tid,
                                  "fit": fit, "style": style, "error": repr(exc)})
                 continue
+
+            # Controlled defect injection: corrupt ~inject_rate of resumes with one known,
+            # realistic defect (ground truth stamped in metadata) so the correction loop has
+            # varied, categorized invalid records to fix (metrics #2 + #4).
+            if _should_inject(idx, inject_rate):
+                name = _inject_defect(resume, injection_count)
+                if name:
+                    injection_count += 1
+                    defect_counts[name] += 1
 
             _append_jsonl(resumes_path, resume)
             n_resumes += 1
@@ -273,6 +375,13 @@ def run(*, num_jobs: int, resumes_per_job: int, niche_ratio: float) -> None:
     for t in config.JOB_SENIORITY_TIERS:
         print(f"  {t[0]:10s} {seniority_counts[t[0]]:4d}  {_pct(seniority_counts[t[0]], n_jobs):5.1f}%")
 
+    n_injected = sum(defect_counts.values())
+    print(f"\nInjected defects: {n_injected}/{n_resumes} resumes "
+          f"({_pct(n_injected, n_resumes):.1f}% raw-invalid by design; rest expected valid):")
+    for name, _ in _DEFECT_MENU:
+        if defect_counts[name]:
+            print(f"  {name:18s} {defect_counts[name]:3d}")
+
     if failures:
         print(f"\n{len(failures)} failure(s) logged (run continued; details in logs/raw_responses.jsonl).")
 
@@ -291,8 +400,11 @@ def main() -> None:
                    help=f"resumes per job (default {config.DEFAULT_RESUMES_PER_JOB})")
     p.add_argument("--niche-ratio", type=float, default=config.NICHE_JOB_RATIO,
                    help=f"fraction of jobs flagged niche (default {config.NICHE_JOB_RATIO})")
+    p.add_argument("--inject-rate", type=float, default=config.INVALID_INJECTION_RATE,
+                   help=f"fraction of resumes given a controlled defect (default {config.INVALID_INJECTION_RATE})")
     args = p.parse_args()
-    run(num_jobs=args.jobs, resumes_per_job=args.resumes_per_job, niche_ratio=args.niche_ratio)
+    run(num_jobs=args.jobs, resumes_per_job=args.resumes_per_job, niche_ratio=args.niche_ratio,
+        inject_rate=args.inject_rate)
 
 
 if __name__ == "__main__":

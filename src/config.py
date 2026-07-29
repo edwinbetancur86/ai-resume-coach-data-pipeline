@@ -66,6 +66,9 @@ LOGFIRE_TOKEN = os.getenv("LOGFIRE_TOKEN", "")
 DEFAULT_NUM_JOBS = 50
 DEFAULT_RESUMES_PER_JOB = 6
 NICHE_JOB_RATIO = 0.30  # ~30% of jobs flagged niche (feeds niche-vs-standard analysis)
+INVALID_INJECTION_RATE = 0.15  # fraction of resumes given ONE controlled defect (raw-invalid
+#                                on purpose): feeds the validation gate + correction loop with
+#                                known, varied ground-truth errors. See step1 _DEFECT_MENU.
 
 # Job seniority tiers — cycled across jobs so the job side has a real seniority SPREAD
 # (temp alone collapses to "Senior/5yr"; F3 seniority-mismatch needs signal on both sides).
