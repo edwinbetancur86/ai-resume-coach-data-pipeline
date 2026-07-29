@@ -18,6 +18,7 @@ __pycache__/
 
 # ── Runtime noise (audit logs are regenerated each run) ───────────────────
 logs/*.log
+logs/*.out
 logs/**/*.jsonl
 
 # ── OS cruft ──────────────────────────────────────────────────────────────
