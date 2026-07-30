@@ -1,0 +1,28 @@
+{
+  "corrected_at": "2026-07-30T14:41:31.712478+00:00",
+  "source_timestamp": "20260729_150948",
+  "invalid_in": 46,
+  "fixed": 46,
+  "failed": 0,
+  "errored": 0,
+  "success_rate": 1.0,
+  "avg_attempts_to_fix": 1.0,
+  "attempts_histogram": {
+    "1": 46
+  },
+  "fixed_by_defect": {
+    "present_end_date": 7,
+    "non_iso_date": 7,
+    "gpa_out_of_range": 7,
+    "invalid_email": 6,
+    "bad_proficiency": 6,
+    "short_phone": 6,
+    "end_before_start": 6,
+    "organic": 1
+  },
+  "failed_by_defect": {},
+  "deletion_cheats": 0,
+  "valid_before": 254,
+  "valid_after": 300,
+  "post_correction_valid_rate": 1.0
+}
