@@ -84,6 +84,7 @@ If I couldn't explain a piece to an interviewer, we're not done with it.
 | 20 | Crash-safe incremental append; per-item failure logged + skipped; three streams (jobs/resumes/pairs-linkage), strict ResumePair assembled downstream | A mid-run failure keeps prior progress; can't embed a not-yet-valid resume in the strict pair model | Rules #6, #9 |
 | 21 | Cycle jobs through a 5-tier seniority ladder + re-key niche to per-cycle (data-driven from a 10-job pilot: temp alone gave 100% Senior/5yr) | Gives F3 seniority-mismatch real signal on the job side; decorrelates niche from seniority. Logged in iteration_log | Rule #5, Failure metric F3 |
 | 22 | Recalibrate resume generation: INSTRUCT formats (→~100% valid) + CONTROLLED 15% defect injection (7-type menu, ground truth in metadata) instead of loose-everything | Loose dates overshot to 99.7% invalid (breaks metric #2); measure-first proved fully-instructed is ~100% valid → injection gives a known, varied, categorized invalid minority for metrics #2 + #4 | Metrics #2, #4; decision #10 refined |
+| 23 | step2 sorts errors into a documented 4-bucket taxonomy (invalid_format / out_of_range / invalid_value / constraint_violation); the categorizer is AUTO-verified against the injected-defect ground truth | Metric #2 needs categorized errors; ground truth turns the manual spot-check into an automatic correctness check (got 45/45 = 100%) | Metrics #2, #3 |
 
 *(Append a new row every time we make a decision worth remembering.)*
 

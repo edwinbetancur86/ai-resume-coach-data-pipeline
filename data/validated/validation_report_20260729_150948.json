@@ -1,0 +1,33 @@
+{
+  "validated_at": "2026-07-30T00:00:21.677298+00:00",
+  "source_timestamp": "20260729_150948",
+  "jobs": {
+    "total": 50,
+    "valid": 50,
+    "invalid": 0,
+    "valid_rate": 1.0
+  },
+  "resumes": {
+    "total": 300,
+    "valid": 254,
+    "invalid": 46,
+    "valid_rate": 0.8467
+  },
+  "pairs": {
+    "total": 300,
+    "valid": 254,
+    "invalid": 46,
+    "valid_rate": 0.8467
+  },
+  "error_categories": {
+    "invalid_format": 20,
+    "constraint_violation": 12,
+    "invalid_value": 8,
+    "out_of_range": 7
+  },
+  "categorizer_ground_truth": {
+    "checked": 45,
+    "matched": 45,
+    "agreement": 1.0
+  }
+}
